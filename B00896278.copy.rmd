@@ -1,0 +1,368 @@
+COURSEWORK SUBMISSION SHEET 
+
+Student's Name: Joshua Bandiola 
+
+Registration No: B00896278
+
+Course Title: MSc Data Science
+
+---------------------------------------------------------------------------------------------------------------------
+COM736: Data Validation and Visualisation
+CRN: 32152
+Coursework 1
+----------------------------------------------------------------------------------------------------------------------
+
+```{r}
+
+#import dataset 
+
+data <- read.csv("C:/Users/jband/Documents/Josh Masters/Data Visualisation/CW2/Dataset/Master.csv")
+
+summary(data)
+
+```
+
+```{r}
+#remove RID column 
+
+data <- data[, -1]
+```
+
+```{r}
+
+#check null and out of range values
+
+colSums(is.na(data))
+
+apply(data == -4, 2, sum) 
+
+apply(data == 7, 2, sum)
+
+# we can see how many out of range values / missing values there are for each column 
+# also for diagnosis values can only take 1,2 or 3. 
+
+```
+
+```{r}
+
+#replace -4 to na 
+
+data[data == -4] <- NA
+data[data == 7] <- NA
+
+colSums(is.na(data))
+
+```
+
+```{r}
+
+#do a median imputation for all the columns in the dataset
+data <- apply(data, 2, function(x) replace(x, is.na(x), median(x, na.rm = TRUE)))
+
+data <- data.frame(data)
+
+data
+
+```
+
+```{r}
+
+#check null values now after imputation
+
+colSums(is.na(data))
+
+```
+
+```{r}
+
+library(dplyr)
+
+#split the dataset into discrete and continuous variables
+
+discrete <- dplyr::select(data, 1, 3:14, 27)
+continuous <- dplyr::select(data, 2, 15:26, 28:30)
+
+head(discrete)
+
+```
+
+
+```{r}
+
+#check for outliers but leave it to avoid loss of data and can influence the dataset
+
+stacked <- stack(continuous)
+head(stacked)
+
+outliers <- boxplot(stacked$values ~ stacked$ind,
+        col = rainbow(ncol(trees)))
+
+```
+
+```{r}
+
+#see what the distribution is like for the continuous variables
+
+library(Hmisc)
+
+hist.data.frame(continuous)
+```
+
+```{r}
+
+#do shapiro test 
+
+shapiro_results <- apply(continuous, 2, shapiro.test)
+p_values <- sapply(shapiro_results, function(x) x$p.value)
+
+# Print the p-values
+print(p_values)
+
+
+#results show that all the columns are below 0.5 alpha value suggesting that the dataset is not normally distributed 
+
+```
+
+```{r}
+
+#try a square root transformation - brute force approach
+
+mydata <- continuous + 0.1
+
+mydata_log <- apply(mydata, 2, sqrt)
+
+mydata_log <- data.frame(mydata_log)
+
+hist.data.frame(mydata_log)
+
+```
+
+```{r}
+
+#scale the square root transformation
+
+continuous_scaled <- scale(mydata_log)
+
+continuous_scaled <- as.data.frame(continuous_scaled)
+
+colMeans(continuous_scaled) # we can see that the mean for each column after scale is very close to zero 
+
+```
+
+```{r}
+
+#combine the continuous and discrete variables together 
+
+X_data <- bind_cols(discrete,continuous_scaled)
+
+Y_data <- data$Diagnosis
+
+Y_data <- as.data.frame(Y_data)
+
+```
+
+```{r}
+
+# Create a clustermap of the correlation matrix
+
+library(pheatmap)
+
+cor_data <- cor(X_data)
+
+pheatmap(cor_data, cluster_rows = TRUE, cluster_cols = TRUE)
+
+```
+```{r}
+
+# perform pca analysis with 90% variance
+
+data_pca <- prcomp(X_data, center = TRUE, scale. = TRUE)
+
+variance_ratio <- cumsum(data_pca$sdev^2 / sum(data_pca$sdev^2))
+num_components <- which(variance_ratio >= 0.90)[1]
+
+X_pca <- -predict(data_pca, newdata = X_data)[, 1:num_components]
+
+head(X_pca)
+
+```
+
+```{r}
+library(corrplot)
+
+PCcor = cor(X_pca)
+#Correlation plot.
+corrplot(PCcor, order="hclust")
+
+```
+
+```{r}
+
+#concatenate the Xpca and the target variable together 
+
+library(dplyr)
+
+dataPCA <- bind_cols(X_pca,Y_data)
+
+```
+
+```{r}
+
+#since this is a classification problem, replace the 3 in the target variable to 2 which indicates a non-healthy person
+
+dataPCA$Y_data <- ifelse(dataPCA$Y_data == 3, 2, dataPCA$Y_data)
+
+table(dataPCA$Y_data)
+
+
+```
+```{r}
+
+#plot the first two components
+
+library(ggplot2)
+
+ggplot(dataPCA, aes(x = PC1, y = PC2, color = as.factor(Y_data))) + 
+  geom_point() + 
+  scale_color_brewer(palette = "Set2")
+
+# we can see that the two variables are quite seperate
+
+
+```
+```{r}
+
+#from the results previously we can see that the dataset is quite unbalanced, so perform random under sampling to make it 200 data points for each group in the target variable
+
+library(dplyr)
+
+# Set the seed for reproducibility
+set.seed(1)
+
+# Randomly sample rows from dataPCA
+df <- dataPCA %>% sample_frac(1, replace = FALSE)
+
+
+```
+
+
+```{r}
+
+# approach is to filter rows with Diagnosis == 1 and 2 and select first 200 rows
+labelOne <- df %>% filter(Y_data == 1) %>% slice(1:200)
+
+labelTwo <- df %>% filter(Y_data == 2) %>% slice(1:200)
+
+# Concatenate labelOne and labelTwo into a new data frame
+sampleDf <- bind_rows(labelOne, labelTwo)
+
+```
+
+```{r}
+
+#shuffle the new dataset and create a count plot for the target groups
+
+newDf <- sampleDf %>% sample_frac(1, replace = FALSE)
+
+ggplot(newDf, aes(x = Y_data, fill = factor(Y_data))) +
+  geom_bar() +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Equally distributed classes") +
+  theme_minimal()
+
+
+```
+```{r}
+
+#sample distribution 
+
+ggplot(newDf, aes(x = PC1, y = PC2, color = as.factor(Y_data))) + 
+  geom_point() + 
+  scale_color_brewer(palette = "Set2")
+
+```
+
+```{r}
+
+#for test train splitting, split the X and Y variables
+
+# Select all columns except target variable
+X <- newDf[, !(names(newDf) %in% "Y_data")]
+
+# Map target variable to binary values
+y <- ifelse(newDf$Y_data == 1, 1, 0) # 1 indicating healthy patient and 0 indicating non-healthy patient
+
+y <- as.data.frame(y)
+
+newDf <- bind_cols(X,y)
+
+
+```
+
+```{r}
+
+#perform split test training
+
+# Set the seed for reproducibility
+set.seed(1)
+
+# Set the proportion of data to use for training
+train_prop <- 0.7
+
+# Determine the number of observations to use for training
+train_size <- round(train_prop * nrow(newDf))
+
+# Sample indices without replacement for the training set
+train_index <- sample(seq_len(nrow(newDf)), size = train_size, replace = FALSE)
+
+# Create the training and testing data sets
+
+trainData <- newDf[train_index, ]
+testData <- newDf[-train_index, ]
+
+
+#X_train <- X[train_index, ]
+#X_test <- X[-train_index, ]
+
+#row.names(X_train) <- NULL
+#row.names(X_test) <- NULL
+
+#y_train <- as.data.frame(y[train_index, ])
+#y_test <- as.data.frame(y[-train_index, ])
+
+```
+
+```{r}
+
+#perform classfier algorithms
+
+#use svm first
+
+library(e1071)
+library(tidyverse)
+
+install.packages("vctrs")
+
+
+set.seed(123)
+
+# Split the data into 10 folds
+folds <- createFolds(newDf$y, k = 10)
+
+results <- c()
+
+svm_model <- svm(y ~ ., data = trainData, kernel = "radial", trControl = train_control)
+
+actual <- trainData$y
+
+pred <- predict(svm_model, )
+
+table(round(svm_model$fitted), actual)
+
+
+```
+
+
+
+
+
